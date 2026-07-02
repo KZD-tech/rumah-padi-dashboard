@@ -1,11 +1,15 @@
 /**
- * Rumah Padi Dashboard — Cloudflare Worker
+ * Rumah Padi Dashboard — Cloudflare Worker (Multi-Kempen)
  *
  * Routes:
- *   POST /api/upload/fb      → upload FB Ads CSV
- *   POST /api/upload/onpay   → upload Onpay CSV
- *   GET  /api/metrics        → data gabungan untuk dashboard
- *   GET  /api/donations      → senarai donation terkini
+ *   GET  /api/campaigns         → senarai kempen
+ *   POST /api/campaigns         → buat kempen baru
+ *   POST /api/upload/fb         → upload FB Ads CSV
+ *   POST /api/upload/onpay      → upload Onpay CSV
+ *   POST /api/upload/videos     → upload Video Links CSV
+ *   GET  /api/metrics           → data gabungan (filter: ?campaign_id=)
+ *   GET  /api/donations         → senarai donation (filter: ?campaign_id=)
+ *   POST /webhook/onpay         → Onpay real-time webhook
  */
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -33,6 +37,12 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers: c });
 
     try {
+      if (pathname === '/api/campaigns' && request.method === 'GET')
+        return await getCampaigns(env, c);
+
+      if (pathname === '/api/campaigns' && request.method === 'POST')
+        return await createCampaign(request, env, c);
+
       if (pathname === '/api/upload/fb' && request.method === 'POST')
         return await uploadFB(request, env, c);
 
@@ -43,12 +53,11 @@ export default {
         return await uploadVideos(request, env, c);
 
       if (pathname === '/api/metrics' && request.method === 'GET')
-        return await getMetrics(env, c);
+        return await getMetrics(request, env, c);
 
       if (pathname === '/api/donations' && request.method === 'GET')
         return await getDonations(request, env, c);
 
-      // Webhook Onpay (real-time, untuk masa depan)
       if (pathname === '/webhook/onpay' && request.method === 'POST')
         return await handleOnpayWebhook(request, env, c);
 
@@ -59,15 +68,44 @@ export default {
   },
 };
 
+// ─── GET CAMPAIGNS ────────────────────────────────────────────────────────────
+async function getCampaigns(env, c) {
+  const result = await env.DB.prepare(
+    'SELECT * FROM campaigns ORDER BY created_at ASC'
+  ).all();
+  return jsonResp({ ok: true, campaigns: result.results }, 200, c);
+}
+
+// ─── CREATE CAMPAIGN ──────────────────────────────────────────────────────────
+async function createCampaign(request, env, c) {
+  const { id, name } = await request.json();
+  if (!id || !name)
+    return jsonResp({ ok: false, error: 'id dan name diperlukan' }, 400, c);
+  if (!/^[a-z0-9-]+$/.test(id))
+    return jsonResp({ ok: false, error: 'id: huruf kecil, nombor, dan tanda - sahaja' }, 400, c);
+
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO campaigns (id, name) VALUES (?, ?)'
+  ).bind(id, name).run();
+
+  return jsonResp({ ok: true, id, name }, 200, c);
+}
+
 // ─── UPLOAD FB ADS CSV ────────────────────────────────────────────────────────
 async function uploadFB(request, env, c) {
-  const formData = await request.formData();
-  const file = formData.get('file');
+  const formData   = await request.formData();
+  const file       = formData.get('file');
+  const campaignId = formData.get('campaign_id') || 'rumah-padi';
   if (!file) return jsonResp({ ok: false, error: 'Tiada fail' }, 400, c);
 
   const text = await file.text();
   const rows = parseCSV(text);
   if (!rows.length) return jsonResp({ ok: false, error: 'CSV kosong' }, 400, c);
+
+  // Pastikan kempen wujud
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO campaigns (id, name) VALUES (?, ?)'
+  ).bind(campaignId, campaignId).run();
 
   let upserted = 0;
   for (const row of rows) {
@@ -95,15 +133,15 @@ async function uploadFB(request, env, c) {
 
     await env.DB.prepare(`
       INSERT OR REPLACE INTO fb_ads
-        (ad_name, campaign_name, adset_name,
+        (campaign_id, ad_name, campaign_name, adset_name,
          spend, impressions, reach, ctr,
          purchases, cost_per_result, purchase_roas,
          lpv, cost_per_lpv, hook_rate,
          cpc, link_clicks, frequency, cpm,
          date_start, date_stop, uploaded_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).bind(
-      adName, campaign, adset,
+      campaignId, adName, campaign, adset,
       spend, impr, reach, ctr,
       purchases, costRes, roas,
       lpv, cplpv, hookRate,
@@ -114,13 +152,14 @@ async function uploadFB(request, env, c) {
     upserted++;
   }
 
-  return jsonResp({ ok: true, upserted, source: 'fb' }, 200, c);
+  return jsonResp({ ok: true, upserted, source: 'fb', campaign_id: campaignId }, 200, c);
 }
 
 // ─── UPLOAD ONPAY CSV ─────────────────────────────────────────────────────────
 async function uploadOnpay(request, env, c) {
-  const formData = await request.formData();
-  const file = formData.get('file');
+  const formData   = await request.formData();
+  const file       = formData.get('file');
+  const campaignId = formData.get('campaign_id') || 'rumah-padi';
   if (!file) return jsonResp({ ok: false, error: 'Tiada fail' }, 400, c);
 
   const text = await file.text();
@@ -139,11 +178,10 @@ async function uploadOnpay(request, env, c) {
     const amount    = parseFloat(row['Jumlah Keseluruhan (RM)'] || 0);
     const createdAt = row['Tarikh & Masa (Dimasukkan)'] || '';
 
-    // Parse source & UTM
     const isNew  = extra2.toLowerCase().includes('new') ? 1 : 0;
     const source = extra2.split('(')[0].trim();
 
-    const parts = extra3.split(' | ').map(s => s.trim());
+    const parts    = extra3.split(' | ').map(s => s.trim());
     const campaign = parts[0] || '';
     const adset    = parts[1] || '';
     const adName   = parts[2] || '';
@@ -151,25 +189,26 @@ async function uploadOnpay(request, env, c) {
     await env.DB.prepare(`
       INSERT OR REPLACE INTO donations
         (id, donor_name, donor_email, amount, source,
-         campaign_name, adset_name, ad_name,
+         campaign_id, campaign_name, adset_name, ad_name,
          is_new, status, created_at, raw_extra_2, raw_extra_3)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
     `).bind(
       parseInt(id), donorName, email, amount, source,
-      campaign, adset, adName,
+      campaignId, campaign, adset, adName,
       isNew, createdAt, extra2, extra3
     ).run();
 
     upserted++;
   }
 
-  return jsonResp({ ok: true, upserted, source: 'onpay' }, 200, c);
+  return jsonResp({ ok: true, upserted, source: 'onpay', campaign_id: campaignId }, 200, c);
 }
 
 // ─── UPLOAD VIDEO LINKS CSV ───────────────────────────────────────────────────
 async function uploadVideos(request, env, c) {
-  const formData = await request.formData();
-  const file = formData.get('file');
+  const formData   = await request.formData();
+  const file       = formData.get('file');
+  const campaignId = formData.get('campaign_id') || 'rumah-padi';
   if (!file) return jsonResp({ ok: false, error: 'Tiada fail' }, 400, c);
 
   const text = await file.text();
@@ -183,24 +222,28 @@ async function uploadVideos(request, env, c) {
     if (!adName || !ytUrl) continue;
 
     await env.DB.prepare(`
-      INSERT OR REPLACE INTO video_links (ad_name, youtube_url, updated_at)
-      VALUES (?, ?, datetime('now'))
-    `).bind(adName, ytUrl).run();
+      INSERT OR REPLACE INTO video_links (campaign_id, ad_name, youtube_url, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `).bind(campaignId, adName, ytUrl).run();
 
     upserted++;
   }
 
-  return jsonResp({ ok: true, upserted, source: 'videos' }, 200, c);
+  return jsonResp({ ok: true, upserted, source: 'videos', campaign_id: campaignId }, 200, c);
 }
 
 // ─── GET METRICS ──────────────────────────────────────────────────────────────
-async function getMetrics(env, c) {
-  const fbResult = await env.DB.prepare(
-    'SELECT * FROM fb_ads ORDER BY spend DESC'
-  ).all();
+async function getMetrics(request, env, c) {
+  const { searchParams } = new URL(request.url);
+  const campaignId = searchParams.get('campaign_id') || 'rumah-padi';
 
-  // YouTube URLs
-  const vidResult = await env.DB.prepare('SELECT * FROM video_links').all();
+  const fbResult = await env.DB.prepare(
+    'SELECT * FROM fb_ads WHERE campaign_id = ? ORDER BY spend DESC'
+  ).bind(campaignId).all();
+
+  const vidResult = await env.DB.prepare(
+    'SELECT * FROM video_links WHERE campaign_id = ?'
+  ).bind(campaignId).all();
   const vidMap = {};
   for (const v of vidResult.results) vidMap[v.ad_name] = v.youtube_url;
 
@@ -213,9 +256,9 @@ async function getMetrics(env, c) {
       SUM(1-is_new) AS returning_donors,
       AVG(amount)   AS avg_amount
     FROM donations
-    WHERE status = 'confirmed'
+    WHERE status = 'confirmed' AND campaign_id = ?
     GROUP BY ad_name
-  `).all();
+  `).bind(campaignId).all();
 
   const donMap = {};
   for (const d of donResult.results) donMap[d.ad_name] = d;
@@ -245,6 +288,7 @@ async function getMetrics(env, c) {
 
   return jsonResp({
     ok: true,
+    campaign_id: campaignId,
     summary: {
       total_spend:   totalSpend,
       total_revenue: totalRevenue,
@@ -263,14 +307,15 @@ async function getMetrics(env, c) {
 // ─── GET DONATIONS ────────────────────────────────────────────────────────────
 async function getDonations(request, env, c) {
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500);
+  const limit      = Math.min(parseInt(searchParams.get('limit') || '100'), 500);
+  const campaignId = searchParams.get('campaign_id') || 'rumah-padi';
 
   const result = await env.DB.prepare(`
     SELECT * FROM donations
-    WHERE status = 'confirmed'
+    WHERE status = 'confirmed' AND campaign_id = ?
     ORDER BY created_at DESC
     LIMIT ?
-  `).bind(limit).all();
+  `).bind(campaignId, limit).all();
 
   return jsonResp({ ok: true, donations: result.results }, 200, c);
 }
@@ -283,24 +328,25 @@ async function handleOnpayWebhook(request, env, c) {
   if (data.event_type !== 'sale.confirmed')
     return jsonResp({ ok: true, skipped: data.event_type }, 200, c);
 
-  const sale   = data.sale;
-  const extra2 = sale.extra_field_2 || '';
-  const extra3 = sale.extra_field_3 || '';
-  const isNew  = extra2.toLowerCase().includes('new') ? 1 : 0;
-  const source = extra2.split('(')[0].trim();
-  const parts  = extra3.split(' | ').map(s => s.trim());
+  const sale       = data.sale;
+  const extra2     = sale.extra_field_2 || '';
+  const extra3     = sale.extra_field_3 || '';
+  const isNew      = extra2.toLowerCase().includes('new') ? 1 : 0;
+  const source     = extra2.split('(')[0].trim();
+  const parts      = extra3.split(' | ').map(s => s.trim());
+  const campaignId = data.campaign_id || 'rumah-padi';
 
   await env.DB.prepare(`
     INSERT OR REPLACE INTO donations
       (id, uid, donor_name, donor_email, amount, source,
-       campaign_name, adset_name, ad_name,
+       campaign_id, campaign_name, adset_name, ad_name,
        is_new, payment_method, status, confirmed_at, created_at,
        raw_extra_2, raw_extra_3)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
   `).bind(
     sale.id, sale.uid, sale.client_fullname, sale.client_email,
     parseFloat(sale.total_amount || 0), source,
-    parts[0] || '', parts[1] || '', parts[2] || '',
+    campaignId, parts[0] || '', parts[1] || '', parts[2] || '',
     isNew, sale.payment_method,
     sale.confirmed_at, sale.created_at,
     extra2, extra3
@@ -311,7 +357,6 @@ async function handleOnpayWebhook(request, env, c) {
 
 // ─── CSV PARSER ───────────────────────────────────────────────────────────────
 function parseCSV(text) {
-  // Buang BOM kalau ada
   const clean = text.replace(/^﻿/, '');
   const lines = clean.split(/\r?\n/);
   const headers = parseCSVLine(lines[0]);
@@ -320,7 +365,9 @@ function parseCSV(text) {
       if (!line.trim()) return null;
       const vals = parseCSVLine(line);
       const obj  = {};
-      headers.forEach((h, i) => { obj[h.trim().replace(/^"|"$/g,'')] = (vals[i] || '').trim().replace(/^"|"$/g,''); });
+      headers.forEach((h, i) => {
+        obj[h.trim().replace(/^"|"$/g, '')] = (vals[i] || '').trim().replace(/^"|"$/g, '');
+      });
       return obj;
     })
     .filter(Boolean);
