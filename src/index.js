@@ -1,5 +1,5 @@
 /**
- * Rumah Padi Dashboard — Cloudflare Worker (Multi-Kempen)
+ * Creative Dashboard — Cloudflare Worker (Multi-Kempen)
  *
  * Routes:
  *   GET  /api/campaigns         → senarai kempen
