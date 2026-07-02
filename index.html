@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creative Dashboard — Kaizen Digital</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f4f1;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.09);
+    --text: #0b0b0b;
+    --muted: #7a7975;
+    --green: #1baf7a; --green-bg: #E1F5EE; --green-text: #0F6E56;
+    --amber: #eda100; --amber-bg: #FAEEDA; --amber-text: #854F0B;
+    --red: #e24b4a;   --red-bg: #FCEBEB;   --red-text: #A32D2D;
+    --gray-bg: #F1EFE8; --gray-text: #5F5E5A;
+    --radius: 12px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; padding: 24px; }
+
+  /* Upload bar */
+  .upload-bar { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .upload-label { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+  .upload-zone { display: flex; align-items: center; gap: 8px; }
+  .upload-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text); transition: all .15s; white-space: nowrap; }
+  .upload-btn:hover { background: var(--bg); }
+  .upload-btn.fb  { border-color: #378ADD; color: #185FA5; }
+  .upload-btn.onp { border-color: #1baf7a; color: #0F6E56; }
+  input[type=file] { display: none; }
+  .upload-status { font-size: 11px; color: var(--muted); }
+  .upload-status.ok  { color: var(--green); }
+  .upload-status.err { color: var(--red); }
+
+  /* Campaign bar */
+  .campaign-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .campaign-select { appearance: none; padding: 7px 32px 7px 12px; font-size: 14px; font-weight: 600; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a7975' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 10px center; cursor: pointer; color: var(--text); min-width: 200px; }
+  .campaign-select:focus { outline: none; border-color: var(--text); }
+  .btn-new-campaign { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; font-size: 13px; font-weight: 500; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; color: var(--muted); transition: all .15s; white-space: nowrap; }
+  .btn-new-campaign:hover { border-color: var(--text); color: var(--text); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border-radius: 14px; padding: 24px; width: 360px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,.15); }
+  .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .modal label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
+  .modal input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; background: var(--bg); color: var(--text); }
+  .modal input:focus { outline: none; border-color: var(--text); }
+  .modal-hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+  .btn-cancel { padding: 8px 16px; font-size: 13px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); cursor: pointer; color: var(--muted); }
+  .btn-create { padding: 8px 16px; font-size: 13px; border: none; border-radius: 7px; background: var(--text); color: #fff; cursor: pointer; font-weight: 500; }
+  .btn-create:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Header */
+  .header { margin-bottom: 16px; }
+  .header h1 { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+  .header p { color: var(--muted); font-size: 13px; }
+
+  /* Summary bar */
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border-radius: 10px; padding: 12px 14px; border: 1px solid var(--border); }
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .stat-val { font-size: 20px; font-weight: 600; }
+  .stat-val.bad { color: var(--red); }
+  .stat-val.good { color: var(--green); }
+
+  /* Controls */
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .controls label { font-size: 12px; color: var(--muted); }
+  .btn-group { display: flex; gap: 4px; }
+  .sort-btn { padding: 5px 12px; font-size: 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); cursor: pointer; color: var(--muted); transition: all .15s; }
+  .sort-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+  .filter-btn { padding: 5px 12px; font-size: 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); cursor: pointer; color: var(--muted); transition: all .15s; }
+  .filter-btn.active { border-color: var(--text); color: var(--text); font-weight: 500; }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+
+  /* Card */
+  .card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; transition: transform .15s, box-shadow .15s; }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  .card.hidden { display: none; }
+
+  /* Video container — 9:16 */
+  .video-wrap { position: relative; width: 100%; padding-top: 177.78%; background: #1a1a18; overflow: hidden; }
+  .video-wrap video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .video-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #555; }
+  .video-placeholder svg { opacity: .3; }
+  .video-placeholder span { font-size: 11px; opacity: .5; }
+
+  /* Badge overlay */
+  .badge-overlay { position: absolute; top: 8px; left: 8px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: .03em; }
+  .badge.winner { background: var(--green-bg); color: var(--green-text); }
+  .badge.lemah  { background: var(--amber-bg); color: var(--amber-text); }
+  .badge.rugi   { background: var(--red-bg);   color: var(--red-text); }
+  .badge.zero   { background: var(--gray-bg);  color: var(--gray-text); }
+
+  /* Spend overlay */
+  .spend-overlay { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 20px; backdrop-filter: blur(4px); }
+
+  /* Card body */
+  .card-body { padding: 12px 14px; }
+  .card-title { font-size: 13px; font-weight: 600; margin-bottom: 1px; }
+  .card-subtitle { font-size: 11px; color: var(--muted); margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Metric rows */
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+  .metric-item { }
+  .metric-item .m-label { font-size: 10px; color: var(--muted); margin-bottom: 1px; }
+  .metric-item .m-val { font-size: 13px; font-weight: 600; }
+
+  /* Mini bar */
+  .bar-track { height: 4px; background: #ece9e3; border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+
+  /* ROAS big */
+  .roas-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .roas-label { font-size: 10px; color: var(--muted); }
+  .roas-val { font-size: 16px; font-weight: 700; }
+
+  /* Card meta (impressions, freq, CPM) */
+  .card-meta { display: flex; gap: 10px; font-size: 10px; color: var(--muted); margin-bottom: 8px; flex-wrap: wrap; }
+  .card-meta span b { color: var(--text); font-weight: 600; }
+
+  /* Funnel */
+  .funnel-head { font-size: 9px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px; }
+  .funnel { margin-bottom: 10px; }
+  .funnel-row { display: grid; grid-template-columns: 36px 1fr 34px 40px; align-items: center; gap: 4px; margin-bottom: 5px; }
+  .f-label { font-size: 10px; color: var(--muted); text-align: right; white-space: nowrap; }
+  .f-bar-wrap { height: 5px; background: #ece9e3; border-radius: 3px; overflow: hidden; }
+  .f-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+  .f-val { font-size: 11px; font-weight: 600; text-align: right; line-height: 1.2; }
+  .f-sec { font-size: 9px; color: var(--muted); line-height: 1.2; }
+
+  /* Section for hooks */
+  .section-heading { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 32px 0 12px; }
+
+  @media (max-width: 600px) {
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    body { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<script>const WORKER_URL = 'https://rumah-padi-dashboard.marketing-kaizendigital.workers.dev';</script>
+
+<div class="header">
+  <h1>Creative Dashboard — Kaizen Digital</h1>
+  <p id="last-sync">Memuatkan data...</p>
+</div>
+
+<!-- Campaign Selector -->
+<div class="campaign-bar">
+  <select class="campaign-select" id="campaign-select" onchange="onCampaignChange()">
+    <option value="">Memuatkan kempen...</option>
+  </select>
+  <button class="btn-new-campaign" onclick="openModal()">＋ Kempen Baru</button>
+</div>
+
+<!-- Modal Tambah Kempen -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2>Tambah Kempen Baru</h2>
+    <label>Nama Kempen</label>
+    <input type="text" id="m-name" placeholder="Contoh: Masjid Al-Amin 2025" oninput="autoId()">
+    <label>ID Kempen <span style="color:var(--muted)">(auto)</span></label>
+    <input type="text" id="m-id" placeholder="contoh: masjid-al-amin-2025">
+    <div class="modal-hint">Huruf kecil, nombor, dan tanda - sahaja. Tidak boleh ditukar selepas dibuat.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Batal</button>
+      <button class="btn-create" id="btn-create" onclick="submitNewCampaign()">Buat Kempen</button>
+    </div>
+  </div>
+</div>
+
+<div class="upload-bar">
+  <span class="upload-label">Upload data:</span>
+  <div class="upload-zone">
+    <button class="upload-btn fb" onclick="document.getElementById('fb-file').click()">
+      ↑ FB Ads CSV
+    </button>
+    <input type="file" id="fb-file" accept=".csv" onchange="uploadCSV('fb', this)">
+    <span class="upload-status" id="fb-status"></span>
+  </div>
+  <div class="upload-zone">
+    <button class="upload-btn onp" onclick="document.getElementById('onp-file').click()">
+      ↑ Onpay CSV
+    </button>
+    <input type="file" id="onp-file" accept=".csv" onchange="uploadCSV('onpay', this)">
+    <span class="upload-status" id="onp-status"></span>
+  </div>
+  <div class="upload-zone">
+    <button class="upload-btn" style="border-color:#e24b4a;color:#A32D2D" onclick="document.getElementById('vid-file').click()">
+      ↑ Video Links CSV
+    </button>
+    <input type="file" id="vid-file" accept=".csv" onchange="uploadCSV('videos', this)">
+    <span class="upload-status" id="vid-status"></span>
+  </div>
+</div>
+
+<div class="summary" style="grid-template-columns:repeat(7,1fr)">
+  <div class="stat"><div class="stat-label">Jumlah belanja</div><div class="stat-val" id="s-spend">—</div></div>
+  <div class="stat"><div class="stat-label">Hasil (Onpay)</div><div class="stat-val" id="s-rev">—</div></div>
+  <div class="stat"><div class="stat-label">Overall ROAS</div><div class="stat-val" id="s-roas">—</div></div>
+  <div class="stat"><div class="stat-label">Total Donor</div><div class="stat-val" id="s-donors">—</div></div>
+  <div class="stat"><div class="stat-label">Avg Derma</div><div class="stat-val" id="s-avg">—</div></div>
+  <div class="stat"><div class="stat-label">Overall CVR</div><div class="stat-val" id="s-cvr">—</div></div>
+  <div class="stat"><div class="stat-label">Winners (≥1.0x)</div><div class="stat-val good" id="s-win">—</div></div>
+</div>
+
+<div class="controls">
+  <label>Susun:</label>
+  <div class="btn-group">
+    <button class="sort-btn active" onclick="sortCards('roas')">ROAS</button>
+    <button class="sort-btn" onclick="sortCards('spent')">Belanja</button>
+    <button class="sort-btn" onclick="sortCards('ctr')">CTR</button>
+    <button class="sort-btn" onclick="sortCards('hook')">Hook%</button>
+    <button class="sort-btn" onclick="sortCards('lpv')">LPV</button>
+  </div>
+  <label style="margin-left:8px">Tapis:</label>
+  <div class="btn-group">
+    <button class="filter-btn active" onclick="filterCards('all')">Semua</button>
+    <button class="filter-btn" onclick="filterCards('winner')">Winner</button>
+    <button class="filter-btn" onclick="filterCards('lemah')">Lemah</button>
+    <button class="filter-btn" onclick="filterCards('rugi')">Rugi</button>
+    <button class="filter-btn" onclick="filterCards('zero')">Zero</button>
+  </div>
+</div>
+
+<div class="section-heading">Iklan Berbayar — Video + Metrics</div>
+<div class="grid" id="ad-grid"></div>
+
+<div class="section-heading">Hook Videos (Standalone)</div>
+<div class="grid" id="hook-grid"></div>
+
+<script>
+const ads = [];   // data statik dikosongkan — guna CSV upload
+const hooks = []; // hook standalone dikosongkan
+
+function getBadge(roas, spent) {
+  if (!spent || spent < 5) return { cls:'zero', label:'Zero' };
+  if (roas >= 1.0) return { cls:'winner', label:'Winner ✓' };
+  if (roas >= 0.5) return { cls:'lemah', label:'Lemah' };
+  if (roas > 0)    return { cls:'rugi',  label:'Rugi' };
+  return { cls:'zero', label:'Zero' };
+}
+
+function getRoasColor(roas) {
+  if (roas >= 1.0) return 'var(--green)';
+  if (roas >= 0.5) return 'var(--amber)';
+  if (roas > 0)    return 'var(--red)';
+  return 'var(--muted)';
+}
+
+function encode(s) { return s.split('').map(c => c === ' ' ? '%20' : encodeURIComponent(c) === c ? c : encodeURIComponent(c)).join(''); }
+
+function getYouTubeId(url) {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([^?&#]+)/,
+    /youtube\.com\/watch\?v=([^&#]+)/,
+    /youtube\.com\/shorts\/([^?&#]+)/,
+    /youtube\.com\/embed\/([^?&#]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Color helpers for funnel
+function fColor(val, good, ok) {
+  return val >= good ? 'var(--green)' : val >= ok ? 'var(--amber)' : val > 0 ? 'var(--red)' : 'var(--muted)';
+}
+
+function makeAdCard(ad) {
+  const badge     = getBadge(ad.roas, ad.spent);
+  const roasColor = getRoasColor(ad.roas);
+
+  // Funnel values
+  const impr    = ad.impressions || 0;
+  const hookPct = ad.hook || 0;           // % of impressions
+  const ctrPct  = ad.ctr  || 0;           // % of impressions (link click CTR)
+  const lpv     = ad.lpv  || 0;
+  const donors  = ad.donors || 0;
+  const rev     = ad.rev  || 0;
+  const freq    = ad.frequency || 0;
+  const cpm     = ad.cpm || 0;
+  const lpvRate = ad.lpv_rate  || 0;                           // % of clicks → LPV
+  const cvr     = ad.cvr || (lpv > 0 ? donors/lpv*100 : 0);  // % of LPV → donor
+  const h2c     = ad.hook_to_click || (hookPct > 0 ? ctrPct/hookPct : 0); // fraction
+  const avgDon  = ad.avg_donation || (donors > 0 ? rev/donors : 0);
+
+  // Funnel bar widths (each metric normalised to its own benchmark max)
+  const hookBar = Math.min(hookPct / 35 * 100, 100).toFixed(0);
+  const ctrBar  = Math.min(ctrPct  / 5  * 100, 100).toFixed(0);
+  const lpvBar  = Math.min(lpvRate,              100).toFixed(0);
+  const cvrBar  = Math.min(cvr     / 20 * 100, 100).toFixed(0);
+
+  // Funnel threshold colours
+  const hCol = fColor(hookPct, 20, 15);
+  const cCol = fColor(ctrPct,  3,  2);
+  const lCol = fColor(lpvRate, 60, 40);
+  const dCol = fColor(cvr,     10, 5);
+
+  const ytId = getYouTubeId(ad.youtube_url);
+  const videoHTML = ytId
+    ? `<iframe
+         src="https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1"
+         frameborder="0"
+         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+         allowfullscreen
+         style="position:absolute;inset:0;width:100%;height:100%;border:0">
+       </iframe>`
+    : ad.file
+      ? `<video controls preload="metadata" playsinline>
+           <source src="${encode(ad.file)}">
+         </video>`
+      : `<div class="video-placeholder">
+           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="3"/><polygon points="10 8 16 12 10 16"/></svg>
+           <span>Tiada video</span>
+         </div>`;
+
+  const subtitle = ad.title
+    ? ad.title
+    : (ad.id.match(/H\d+/)
+        ? `Video ${ad.id.replace(/H\d+$/,'').replace(/^Rumah Padi /i,'').replace(/^V/,'')} · Hook ${ad.id.match(/H\d+/)[0]}`
+        : ad.id);
+
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.dataset.roas  = ad.roas;
+  div.dataset.spent = ad.spent;
+  div.dataset.ctr   = ctrPct;
+  div.dataset.hook  = hookPct;
+  div.dataset.lpv   = lpv;
+  div.dataset.badge = badge.cls;
+
+  div.innerHTML = `
+    <div class="video-wrap">
+      ${videoHTML}
+      <div class="badge-overlay"><span class="badge ${badge.cls}">${badge.label}</span></div>
+      <div class="spend-overlay">RM${(ad.spent||0).toLocaleString()}</div>
+    </div>
+    <div class="card-body">
+      <div class="card-title">${ad.id}</div>
+      <div class="card-subtitle">${subtitle}</div>
+
+      ${impr > 0 ? `<div class="card-meta">
+        <span><b>${impr.toLocaleString()}</b> impresi</span>
+        ${freq > 0 ? `<span>Freq <b>${freq.toFixed(1)}x</b></span>` : ''}
+        ${cpm  > 0 ? `<span>CPM <b>RM${cpm.toFixed(1)}</b></span>` : ''}
+      </div>` : ''}
+
+      <div class="funnel-head">Funnel Kebocoran</div>
+      <div class="funnel">
+        <div class="funnel-row">
+          <span class="f-label">Hook</span>
+          <div class="f-bar-wrap"><div class="f-bar-fill" style="width:${hookBar}%;background:${hCol}"></div></div>
+          <span class="f-val" style="color:${hCol}">${hookPct.toFixed(1)}%</span>
+          <span class="f-sec">drpd impresi</span>
+        </div>
+        <div class="funnel-row">
+          <span class="f-label">CTR</span>
+          <div class="f-bar-wrap"><div class="f-bar-fill" style="width:${ctrBar}%;background:${cCol}"></div></div>
+          <span class="f-val" style="color:${cCol}">${ctrPct.toFixed(2)}%</span>
+          <span class="f-sec">${h2c > 0 ? 'H2C '+(h2c*100).toFixed(0)+'%' : ''}</span>
+        </div>
+        <div class="funnel-row">
+          <span class="f-label">LPV</span>
+          <div class="f-bar-wrap"><div class="f-bar-fill" style="width:${lpvBar}%;background:${lCol}"></div></div>
+          <span class="f-val" style="color:${lCol}">${lpv}</span>
+          <span class="f-sec">${lpvRate > 0 ? lpvRate.toFixed(0)+'% klik' : (ad.cplpv > 0 ? 'RM'+ad.cplpv.toFixed(0)+'/LPV' : '')}</span>
+        </div>
+        <div class="funnel-row">
+          <span class="f-label">Derma</span>
+          <div class="f-bar-wrap"><div class="f-bar-fill" style="width:${cvrBar}%;background:${dCol}"></div></div>
+          <span class="f-val" style="color:${dCol}">${donors}</span>
+          <span class="f-sec">${cvr > 0 ? 'CVR '+cvr.toFixed(1)+'%' : ''}</span>
+        </div>
+      </div>
+
+      <div class="roas-row">
+        <div>
+          <div class="roas-label">ROAS</div>
+          <div class="roas-val" style="color:${roasColor}">${ad.roas > 0 ? ad.roas.toFixed(2)+'x' : '—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="roas-label">Hasil · Avg</div>
+          <div style="font-size:12px;font-weight:600;color:${roasColor}">
+            RM${rev.toLocaleString()} · ${avgDon > 0 ? 'RM'+avgDon.toFixed(0) : '—'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  return div;
+}
+
+function makeHookCard(h) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = `
+    <div class="video-wrap">
+      <video controls preload="metadata" playsinline>
+        <source src="${encode(h.file)}">
+      </video>
+      <div class="badge-overlay"><span class="badge" style="background:#E6F1FB;color:#185FA5">${h.hook}</span></div>
+    </div>
+    <div class="card-body">
+      <div class="card-title">${h.hook} · ${h.title}</div>
+      <div class="card-subtitle" style="color:var(--muted);font-size:11px">Hook standalone · 4:5</div>
+    </div>
+  `;
+  return div;
+}
+
+const fileMap = {}; // video fizikal dikosongkan — guna YouTube URL
+
+// Render kad dari data live
+function renderAds(liveAds) {
+  const grid = document.getElementById('ad-grid');
+  grid.innerHTML = '';
+  const sorted = [...liveAds].sort((a,b) => (b.roas_actual||0) - (a.roas_actual||0));
+  sorted.forEach(liveAd => {
+    // Cari static entry untuk file video
+    const staticAd = ads.find(a => a.id === liveAd.ad_name) || {};
+    const merged = {
+      id:           liveAd.ad_name,
+      title:        staticAd.title || '',
+      file:         fileMap[liveAd.ad_name] || staticAd.file || null,
+      youtube_url:  liveAd.youtube_url || null,
+      // Funnel metrics
+      impressions:  liveAd.impressions   || 0,
+      hook:         (liveAd.hook_rate    || 0) * 100,   // convert fraction → %
+      ctr:          liveAd.ctr           || 0,
+      lpv:          liveAd.lpv           || 0,
+      link_clicks:  liveAd.link_clicks   || 0,
+      lpv_rate:     liveAd.lpv_rate      || 0,
+      cvr:          liveAd.cvr           || 0,
+      hook_to_click:liveAd.hook_to_click || 0,
+      frequency:    liveAd.frequency     || 0,
+      cpm:          liveAd.cpm           || 0,
+      // Cost / revenue
+      cplpv:        liveAd.cost_per_lpv  || 0,
+      spent:        liveAd.spend         || 0,
+      rev:          liveAd.total_revenue || 0,
+      donors:       liveAd.donor_count   || 0,
+      avg_donation: liveAd.avg_donation  || 0,
+      roas:         liveAd.roas_actual   || 0,
+    };
+    grid.appendChild(makeAdCard(merged));
+  });
+}
+
+// Render static (fallback jika Worker belum setup)
+function renderStatic() {
+  const grid = document.getElementById('ad-grid');
+  grid.innerHTML = '';
+  const sorted = [...ads].sort((a,b) => b.roas - a.roas);
+  sorted.forEach(ad => grid.appendChild(makeAdCard(ad)));
+  document.getElementById('last-sync').textContent = 'Data statik (Worker belum disambung)';
+}
+
+// Fetch dari Worker
+async function loadLiveData() {
+  try {
+    const res = await fetch(`${WORKER_URL}/api/metrics?campaign_id=${currentCampaignId}`);
+    if (!res.ok) throw new Error('Worker tidak dapat dihubungi');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    // Update summary
+    const fmt = v => 'RM' + parseFloat(v).toLocaleString('ms-MY', {minimumFractionDigits:0, maximumFractionDigits:0});
+    document.getElementById('s-spend').textContent  = fmt(data.summary.total_spend);
+    document.getElementById('s-rev').textContent    = fmt(data.summary.total_revenue);
+    const roas = data.summary.overall_roas;
+    const roasEl = document.getElementById('s-roas');
+    roasEl.textContent = roas.toFixed(2) + 'x';
+    roasEl.className = 'stat-val ' + (roas >= 1 ? 'good' : 'bad');
+    document.getElementById('s-ads').textContent    = data.summary.total_ads;
+    document.getElementById('s-win').textContent    = data.summary.winners;
+    if (data.summary.total_donors != null) {
+      document.getElementById('s-donors').textContent = data.summary.total_donors;
+      document.getElementById('s-avg').textContent    = data.summary.avg_donation > 0 ? fmt(data.summary.avg_donation) : '—';
+      const cvrEl = document.getElementById('s-cvr');
+      cvrEl.textContent = data.summary.overall_cvr > 0 ? data.summary.overall_cvr.toFixed(1)+'%' : '—';
+      cvrEl.className = 'stat-val ' + (data.summary.overall_cvr >= 5 ? 'good' : 'bad');
+    }
+
+    const syncTime   = new Date(data.uploaded_at).toLocaleString('ms-MY');
+    const campName   = allCampaigns.find(c => c.id === currentCampaignId)?.name || currentCampaignId;
+    document.getElementById('last-sync').textContent = `${campName} · Data live · ${syncTime}`;
+
+    renderAds(data.ads);
+  } catch (e) {
+    console.warn('Live data gagal, guna data statik:', e.message);
+    renderStatic();
+  }
+}
+
+// CSV Upload
+async function uploadCSV(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById(type === 'fb' ? 'fb-status' : type === 'onpay' ? 'onp-status' : 'vid-status');
+  statusEl.className = 'upload-status';
+  statusEl.textContent = 'Menghantar...';
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('campaign_id', currentCampaignId);
+    const res  = await fetch(`${WORKER_URL}/api/upload/${type}`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    statusEl.className = 'upload-status ok';
+    statusEl.textContent = `✓ ${data.upserted} rekod berjaya`;
+    await loadLiveData(); // refresh dashboard
+  } catch (e) {
+    statusEl.className = 'upload-status err';
+    statusEl.textContent = '✗ ' + e.message;
+  }
+  input.value = '';
+}
+
+// ── CAMPAIGN MANAGEMENT ────────────────────────────────────────────────────────
+let currentCampaignId = 'rumah-padi';
+let allCampaigns = [];
+
+async function loadCampaigns() {
+  try {
+    const res  = await fetch(`${WORKER_URL}/api/campaigns`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    allCampaigns = data.campaigns;
+    const sel = document.getElementById('campaign-select');
+    sel.innerHTML = allCampaigns.map(c =>
+      `<option value="${c.id}">${c.name}</option>`
+    ).join('');
+
+    if (allCampaigns.length > 0) {
+      currentCampaignId = allCampaigns[0].id;
+      sel.value = currentCampaignId;
+    }
+  } catch (e) {
+    // Fallback: gunakan kempen default
+    document.getElementById('campaign-select').innerHTML =
+      '<option value="rumah-padi">Rumah Padi Anak Yatim Budun</option>';
+  }
+  await loadLiveData();
+}
+
+function onCampaignChange() {
+  currentCampaignId = document.getElementById('campaign-select').value;
+  loadLiveData();
+}
+
+// Modal
+function openModal() {
+  document.getElementById('modal-overlay').classList.add('open');
+  document.getElementById('m-name').focus();
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.getElementById('m-name').value = '';
+  document.getElementById('m-id').value   = '';
+}
+function autoId() {
+  const name = document.getElementById('m-name').value;
+  document.getElementById('m-id').value = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+async function submitNewCampaign() {
+  const name = document.getElementById('m-name').value.trim();
+  const id   = document.getElementById('m-id').value.trim();
+  if (!name || !id) return alert('Sila isi nama dan ID kempen.');
+
+  const btn = document.getElementById('btn-create');
+  btn.disabled = true;
+  btn.textContent = 'Membuat...';
+
+  try {
+    const res  = await fetch(`${WORKER_URL}/api/campaigns`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ id, name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    closeModal();
+    await loadCampaigns();
+    // Switch ke kempen baru
+    document.getElementById('campaign-select').value = id;
+    currentCampaignId = id;
+    await loadLiveData();
+  } catch (e) {
+    alert('Gagal: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Buat Kempen';
+  }
+}
+
+// Init
+loadCampaigns();
+
+const hookGrid = document.getElementById('hook-grid');
+hooks.forEach(h => hookGrid.appendChild(makeHookCard(h)));
+
+// Sort
+function sortCards(field) {
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const cards = [...document.querySelectorAll('#ad-grid .card')];
+  cards.sort((a,b) => parseFloat(b.dataset[field]||0) - parseFloat(a.dataset[field]||0));
+  const grid = document.getElementById('ad-grid');
+  cards.forEach(c => grid.appendChild(c));
+}
+
+// Filter
+function filterCards(type) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.querySelectorAll('#ad-grid .card').forEach(c => {
+    c.classList.toggle('hidden', type !== 'all' && c.dataset.badge !== type);
+  });
+}
+</script>
+</body>
+</html>
