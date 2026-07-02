@@ -23,7 +23,10 @@
   /* Upload bar */
   .upload-bar { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; flex-wrap: wrap; }
   .upload-label { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
-  .upload-zone { display: flex; align-items: center; gap: 8px; }
+  .upload-zone { display: flex; flex-direction: column; gap: 4px; }
+  .upload-zone-row { display: flex; align-items: center; gap: 8px; }
+  .tmpl-link { font-size: 10px; color: var(--muted); text-decoration: none; cursor: pointer; padding-left: 4px; }
+  .tmpl-link:hover { color: var(--text); text-decoration: underline; }
   .upload-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text); transition: all .15s; white-space: nowrap; }
   .upload-btn:hover { background: var(--bg); }
   .upload-btn.fb  { border-color: #378ADD; color: #185FA5; }
@@ -181,25 +184,28 @@
 <div class="upload-bar">
   <span class="upload-label">Upload data:</span>
   <div class="upload-zone">
-    <button class="upload-btn fb" onclick="document.getElementById('fb-file').click()">
-      ↑ FB Ads CSV
-    </button>
-    <input type="file" id="fb-file" accept=".csv" onchange="uploadCSV('fb', this)">
-    <span class="upload-status" id="fb-status"></span>
+    <div class="upload-zone-row">
+      <button class="upload-btn fb" onclick="document.getElementById('fb-file').click()">↑ FB Ads CSV</button>
+      <input type="file" id="fb-file" accept=".csv" onchange="uploadCSV('fb', this)">
+      <span class="upload-status" id="fb-status"></span>
+    </div>
+    <span class="tmpl-link" onclick="downloadTemplate('fb')">↓ download template</span>
   </div>
   <div class="upload-zone">
-    <button class="upload-btn onp" onclick="document.getElementById('onp-file').click()">
-      ↑ Onpay CSV
-    </button>
-    <input type="file" id="onp-file" accept=".csv" onchange="uploadCSV('onpay', this)">
-    <span class="upload-status" id="onp-status"></span>
+    <div class="upload-zone-row">
+      <button class="upload-btn onp" onclick="document.getElementById('onp-file').click()">↑ Onpay CSV</button>
+      <input type="file" id="onp-file" accept=".csv" onchange="uploadCSV('onpay', this)">
+      <span class="upload-status" id="onp-status"></span>
+    </div>
+    <span class="tmpl-link" onclick="downloadTemplate('onpay')">↓ download template</span>
   </div>
   <div class="upload-zone">
-    <button class="upload-btn" style="border-color:#e24b4a;color:#A32D2D" onclick="document.getElementById('vid-file').click()">
-      ↑ Video Links CSV
-    </button>
-    <input type="file" id="vid-file" accept=".csv" onchange="uploadCSV('videos', this)">
-    <span class="upload-status" id="vid-status"></span>
+    <div class="upload-zone-row">
+      <button class="upload-btn" style="border-color:#e24b4a;color:#A32D2D" onclick="document.getElementById('vid-file').click()">↑ Video Links CSV</button>
+      <input type="file" id="vid-file" accept=".csv" onchange="uploadCSV('videos', this)">
+      <span class="upload-status" id="vid-status"></span>
+    </div>
+    <span class="tmpl-link" onclick="downloadTemplate('videos')">↓ download template</span>
   </div>
 </div>
 
@@ -503,6 +509,47 @@ async function loadLiveData() {
     console.warn('Live data gagal, guna data statik:', e.message);
     renderStatic();
   }
+}
+
+// Template Download
+function downloadTemplate(type) {
+  const templates = {
+    fb: {
+      filename: 'template-fb-ads.csv',
+      content: [
+        'Ad name,Campaign name,Ad set name,Amount spent (MYR),Impressions,Reach,CTR (all),Hook Hold Rate,Landing page views,Cost per landing page view,Purchase ROAS (return on ad spend),Results,Cost per result,CPC (cost per link click),Reporting starts,Reporting ends',
+        'Contoh Iklan V1H1,Nama Kempen,Nama Ad Set,150.00,8500,5200,2.50,0.18,55,2.73,1.20,3,50.00,0.82,2025-01-01,2025-01-31',
+        'Contoh Iklan V1H2,Nama Kempen,Nama Ad Set,200.00,10000,6000,3.10,0.22,80,2.50,1.80,5,40.00,0.70,2025-01-01,2025-01-31',
+      ].join('\n'),
+    },
+    onpay: {
+      filename: 'template-onpay.csv',
+      content: [
+        '#,Nama,Emel,Jumlah Keseluruhan (RM),Tambahan #2,Tambahan #3,Tarikh & Masa (Dimasukkan)',
+        '1001,Ahmad bin Ali,ahmad@email.com,50.00,Facebook (new),Nama Kempen | Nama Adset | Nama Iklan,2025-01-15 10:30:00',
+        '1002,Siti binti Abu,siti@email.com,100.00,Facebook (returning),Nama Kempen | Nama Adset | Nama Iklan,2025-01-16 14:20:00',
+      ].join('\n'),
+    },
+    videos: {
+      filename: 'template-video-links.csv',
+      content: [
+        'ad_name,youtube_url',
+        'Contoh Iklan V1H1,https://youtu.be/VIDEO_ID_1',
+        'Contoh Iklan V1H2,https://youtu.be/VIDEO_ID_2',
+        'Contoh Iklan V2H1,https://youtube.com/shorts/VIDEO_ID_3',
+      ].join('\n'),
+    },
+  };
+
+  const t    = templates[type];
+  if (!t) return;
+  const blob = new Blob([t.content], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = t.filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // CSV Upload
