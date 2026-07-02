@@ -1,5 +1,5 @@
 /**
- * Creative Dashboard — Cloudflare Worker (Multi-Kempen)
+ * Rumah Padi Dashboard — Cloudflare Worker (Multi-Kempen)
  *
  * Routes:
  *   GET  /api/campaigns         → senarai kempen
@@ -61,6 +61,12 @@ export default {
       if (pathname === '/api/logs' && request.method === 'GET')
         return await getLogs(request, env, c);
 
+      if (pathname === '/api/snapshots' && request.method === 'GET')
+        return await getSnapshots(request, env, c);
+
+      if (pathname === '/api/rollback' && request.method === 'POST')
+        return await rollbackFB(request, env, c);
+
       if (pathname === '/webhook/onpay' && request.method === 'POST')
         return await handleOnpayWebhook(request, env, c);
 
@@ -109,6 +115,40 @@ async function uploadFB(request, env, c) {
   await env.DB.prepare(
     'INSERT OR IGNORE INTO campaigns (id, name) VALUES (?, ?)'
   ).bind(campaignId, campaignId).run();
+
+  // Snapshot data semasa sebelum upload (untuk rollback)
+  const snapshotId = Date.now().toString();
+  const existing   = await env.DB.prepare(
+    'SELECT * FROM fb_ads WHERE campaign_id = ?'
+  ).bind(campaignId).all();
+
+  for (const row of existing.results) {
+    await env.DB.prepare(`
+      INSERT INTO fb_ads_snapshots
+        (snapshot_id, campaign_id, ad_name, spend, impressions, reach, ctr,
+         purchases, cost_per_result, purchase_roas, lpv, cost_per_lpv,
+         hook_rate, cpc, link_clicks, frequency, cpm, date_start, date_stop)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      snapshotId, row.campaign_id, row.ad_name,
+      row.spend, row.impressions, row.reach, row.ctr,
+      row.purchases, row.cost_per_result, row.purchase_roas,
+      row.lpv, row.cost_per_lpv, row.hook_rate,
+      row.cpc, row.link_clicks, row.frequency, row.cpm,
+      row.date_start, row.date_stop
+    ).run();
+  }
+
+  // Buang snapshot lama — simpan 5 terkini sahaja
+  const oldSnaps = await env.DB.prepare(`
+    SELECT DISTINCT snapshot_id FROM fb_ads_snapshots
+    WHERE campaign_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET 5
+  `).bind(campaignId).all();
+  for (const s of oldSnaps.results) {
+    await env.DB.prepare(
+      'DELETE FROM fb_ads_snapshots WHERE snapshot_id = ?'
+    ).bind(s.snapshot_id).run();
+  }
 
   let upserted = 0;
   for (const row of rows) {
@@ -194,11 +234,11 @@ async function uploadFB(request, env, c) {
     upserted++;
   }
 
-  // Log upload
+  // Log upload (simpan snapshotId untuk rollback)
   const totalSpend = rows.reduce((s, r) => s + parseFloat(r['Amount spent (MYR)'] || r['spend'] || 0), 0);
   const dateRange  = rows.length ? `${rows[0]['Reporting starts'] || ''} → ${rows[rows.length-1]['Reporting ends'] || ''}` : '';
   await writeLog(env, 'fb', campaignId, 'ok',
-    `${upserted} iklan | ${dateRange} | RM${totalSpend.toFixed(2)} belanja`);
+    `${upserted} iklan | ${dateRange} | RM${totalSpend.toFixed(2)} belanja | snap:${snapshotId}`);
 
   return jsonResp({ ok: true, upserted, source: 'fb', campaign_id: campaignId }, 200, c);
 }
@@ -407,6 +447,63 @@ async function handleOnpayWebhook(request, env, c) {
   ).run();
 
   return jsonResp({ ok: true }, 200, c);
+}
+
+// ─── GET SNAPSHOTS ────────────────────────────────────────────────────────────
+async function getSnapshots(request, env, c) {
+  const { searchParams } = new URL(request.url);
+  const campaignId = searchParams.get('campaign_id') || 'rumah-padi';
+
+  const result = await env.DB.prepare(`
+    SELECT snapshot_id, campaign_id, MIN(created_at) AS created_at, COUNT(*) AS ad_count
+    FROM fb_ads_snapshots
+    WHERE campaign_id = ?
+    GROUP BY snapshot_id
+    ORDER BY created_at DESC
+    LIMIT 5
+  `).bind(campaignId).all();
+
+  return jsonResp({ ok: true, snapshots: result.results }, 200, c);
+}
+
+// ─── ROLLBACK FB ──────────────────────────────────────────────────────────────
+async function rollbackFB(request, env, c) {
+  const { snapshot_id, campaign_id } = await request.json();
+  if (!snapshot_id || !campaign_id)
+    return jsonResp({ ok: false, error: 'snapshot_id dan campaign_id diperlukan' }, 400, c);
+
+  const snap = await env.DB.prepare(
+    'SELECT * FROM fb_ads_snapshots WHERE snapshot_id = ? AND campaign_id = ?'
+  ).bind(snapshot_id, campaign_id).all();
+
+  if (!snap.results.length)
+    return jsonResp({ ok: false, error: 'Snapshot tidak dijumpai' }, 404, c);
+
+  // Padam data semasa
+  await env.DB.prepare('DELETE FROM fb_ads WHERE campaign_id = ?').bind(campaign_id).run();
+
+  // Restore dari snapshot
+  for (const row of snap.results) {
+    await env.DB.prepare(`
+      INSERT INTO fb_ads
+        (campaign_id, ad_name, spend, impressions, reach, ctr,
+         purchases, cost_per_result, purchase_roas, lpv, cost_per_lpv,
+         hook_rate, cpc, link_clicks, frequency, cpm, date_start, date_stop, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      row.campaign_id, row.ad_name,
+      row.spend, row.impressions, row.reach, row.ctr,
+      row.purchases, row.cost_per_result, row.purchase_roas,
+      row.lpv, row.cost_per_lpv, row.hook_rate,
+      row.cpc, row.link_clicks, row.frequency, row.cpm,
+      row.date_start, row.date_stop
+    ).run();
+  }
+
+  await writeLog(env, 'rollback', campaign_id, 'ok',
+    `↩ Rollback ke snapshot ${new Date(parseInt(snapshot_id)).toLocaleString('ms-MY')} | ${snap.results.length} iklan dipulihkan`);
+
+  return jsonResp({ ok: true, restored: snap.results.length }, 200, c);
 }
 
 // ─── WRITE LOG ────────────────────────────────────────────────────────────────
