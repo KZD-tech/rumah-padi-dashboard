@@ -540,7 +540,7 @@ async function loadLiveData() {
     const roasEl = document.getElementById('s-roas');
     roasEl.textContent = roas.toFixed(2) + 'x';
     roasEl.className = 'stat-val ' + (roas >= 1 ? 'good' : 'bad');
-    document.getElementById('s-ads').textContent    = data.summary.total_ads;
+    const adsEl = document.getElementById('s-ads'); if (adsEl) adsEl.textContent = data.summary.total_ads;
     document.getElementById('s-win').textContent    = data.summary.winners;
     if (data.summary.total_donors != null) {
       document.getElementById('s-donors').textContent = data.summary.total_donors;
